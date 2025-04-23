@@ -67,6 +67,7 @@ def move_to_x(x_mm):
     # Start logging
     axisX.startLogging()
     axisX.setUnits(Units.mm)
+    axisX.setSpeed
     # Perform the move
     axisX.setDPOS(x_mm)
     
