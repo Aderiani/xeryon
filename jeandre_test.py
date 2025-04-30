@@ -21,7 +21,7 @@ class XAxisController:
 
     def start(self):
         self.controller.start()
-        self.axis.findIndex()
+        self.axis.findIndex(True)
 
     def stop(self):
         self.controller.stop()
@@ -89,7 +89,7 @@ def move_to_3d(x, y, z):
 
 
 
-def takefromdown_leaveintheup():
+def takefromdown_goout():
     # Go to Z low, X in
     move_to_3d(Xin, Y0, Zlow)
     # Grab the wellplate
@@ -97,33 +97,23 @@ def takefromdown_leaveintheup():
     # Go Back to Z low, X out
     move_to_3d(Xout, Y0, Zlow)
     time.sleep(2)
-    # Go to Z high, X out
-    move_to_3d(Xout, Y0, Zhigh)
-    # Go to Z high, X in
-    move_to_3d(Xin, Y0, Zhigh)
-    # Release the wellplate
-    GPIO.output(17, GPIO.LOW)
-    # Go back to Z high, X in1
-    move_to_3d(Xin1, Y0, Zhigh)
+
  
 
 
 
-def take_from_up_leaveindown():
+def gofromoutin():
     # Go back to Z high, X in
-    move_to_3d(Xin, Y0, Zhigh)
-    # Grab the wellplate
-    GPIO.output(17, GPIO.HIGH)
-    # Go Back to Z high, X out
-    move_to_3d(Xout, Y0, Zhigh)
-    # Go to Z low, X out
     move_to_3d(Xout, Y0, Zlow)
-    # Go to Z low, X in
+    # Grab the wellplate
+    # Go Back to Z high, X out
+    # Go to Z low, X out
     move_to_3d(Xin, Y0, Zlow)
+    # Go to Z low, X in
     # Leave the wellplate
     GPIO.output(17, GPIO.LOW)
     # Go to Z low, X out
-    move_to_3d(Xin1, Y0, Zlow)
+
 
 
 def setup_gpio():
@@ -167,11 +157,11 @@ def main():
                 
                 if not is_plate_up:
                     print("Moving plate from down to up...")
-                    takefromdown_leaveintheup()
+                    takefromdown_goout()
                     is_plate_up = True
                 else:
                     print("Moving plate from up to down...")
-                    take_from_up_leaveindown()
+                    gofromoutin()
                     is_plate_up = False
                     
                 time.sleep(0.2)  # Debounce delay

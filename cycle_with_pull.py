@@ -1,8 +1,7 @@
 import time
 from Xeryon import *
 import RPi.GPIO as GPIO
-
-
+import threading
 
 
 class XAxisController:
@@ -27,24 +26,34 @@ class XAxisController:
         self.controller.stop()
 
     def move_to(self, pos_mm):
+        print(f"[{self.name}] Requested move to {pos_mm} mm")
 
         while self.axis.isErrorLimit():
             print(f"[{self.name}] ⚠️ Thermal protection triggered. Cooling down...")
             time.sleep(2)
 
         self.axis.sendCommand("ENBL=1")
+        print(f"[{self.name}] ✅ Axis re-enabled.")
 
+        self.axis.startLogging()
         self.axis.setUnits(Units.mm)
         self.axis.setSpeed(20)
         self.axis.setDPOS(pos_mm)
 
         while not self.axis.isPositionReached():
-            time.sleep(0.5)
+            time.sleep(0.1)
 
+        logs = self.axis.endLogging()
 
         print(f"[{self.name}] ✅ Reached {pos_mm} mm with EPOS: {self.axis.getEPOS()} mm")
 
-
+        # unit_converted_epos = [self.axis.convertEncoderUnitsToUnits(epos, self.axis.units) for epos in logs["EPOS"]]
+        # plt.figure()
+        # plt.plot(unit_converted_epos)
+        # plt.ylabel(f'EPOS ({self.axis.units})')
+        # plt.xlabel("Sample")
+        # plt.title(f"[{self.name}] Move to {pos_mm} mm")
+        # plt.show(block=False)
 
         errors = [msg for msg, chk in self.error_checks if chk()]
         if errors:
@@ -95,17 +104,14 @@ def takefromdown_leaveintheup():
     # Grab the wellplate
     GPIO.output(17, GPIO.HIGH)
     # Go Back to Z low, X out
-    move_to_3d(Xout, Y0, Zlow)
-    time.sleep(2)
+    x_axis.move_to(Xout)
+    z_axis.move_to(Zhigh)
     # Go to Z high, X out
-    move_to_3d(Xout, Y0, Zhigh)
-    # Go to Z high, X in
-    move_to_3d(Xin, Y0, Zhigh)
+    x_axis.move_to(Xin)
     # Release the wellplate
     GPIO.output(17, GPIO.LOW)
     # Go back to Z high, X in1
-    move_to_3d(Xin1, Y0, Zhigh)
- 
+    x_axis.move_to(Xin1)
 
 
 
@@ -141,60 +147,60 @@ def setup_gpio():
     except Exception as e:
         print(f"Failed to setup GPIO: {e}")
         return False
+
 def main():
     # Start all controllers
     for axis in [x_axis, y_axis, z_axis]:
         axis.start()
 
     # Initial position
-    move_to_3d(Xout, Y0, Zlow)
+    while True:
+        move_to_3d(Xout, Y0, Zlow)
+        move_to_3d(Xout, Y0, Zhigh)
     
-    print("System ready. Press the button to start a cycle, or Ctrl+C to exit.")
+    # print("System ready. Press the button to start a cycle, or Ctrl+C to exit.")
     
-    # Track the current state
-    is_plate_up = False
-    
-    try:
-        button_state = GPIO.input(23)
-        last_state = button_state
+    # try:
+    #     button_state = GPIO.input(23)
+    #     last_state = button_state
         
-        while True:
-            button_state = GPIO.input(23)
+    #     while True:
+    #         button_state = GPIO.input(23)
+    #         # Button press detected (remember pull-up means LOW is pressed)
+    #         if button_state == GPIO.LOW and last_state == GPIO.HIGH:
+    #             print("Button pressed - starting cycle!")
+    #             takefromdown_leaveintheup()
+    #             time.sleep(0.2)  # Debounce delay
             
-            # Button press detected (remember pull-up means LOW is pressed)
-            if button_state == GPIO.LOW and last_state == GPIO.HIGH:
-                print("Button pressed - starting cycle!")
-                
-                if not is_plate_up:
-                    print("Moving plate from down to up...")
-                    takefromdown_leaveintheup()
-                    is_plate_up = True
-                else:
-                    print("Moving plate from up to down...")
-                    take_from_up_leaveindown()
-                    is_plate_up = False
-                    
-                time.sleep(0.2)  # Debounce delay
+    #         last_state = button_state
+    #         time.sleep(1)  # Small delay to prevent CPU hogging
+    #         button_state = GPIO.input(23)
             
-            last_state = button_state
-            time.sleep(0.05)  # Small delay to prevent CPU hogging
+    #         # Button press detected (remember pull-up means LOW is pressed)
+    #         if button_state == GPIO.LOW and last_state == GPIO.HIGH:
+    #             print("Button pressed - starting cycle!")
+    #             take_from_up_leaveindown()
+    #             time.sleep(0.2)  # Debounce delay
             
-    except KeyboardInterrupt:
-        print("\nExiting program...")
-    finally:
-        # Cleanup GPIO
-        GPIO.cleanup()
-        print("GPIO cleaned up.")
-        # Cleanup all controllers
-        for axis in [x_axis, y_axis, z_axis]:
-            axis.stop()
-        print("Controllers cleaned up.")
+    #         last_state = button_state
+    #         time.sleep(0.05)  # Small delay to prevent CPU hogging
+    # except KeyboardInterrupt:
+    #     print("\nExiting program...")
+    # finally:
+    #     # Cleanup GPIO
+    #     GPIO.cleanup()
+    #     print("GPIO cleaned up.")
+    #     # Cleanup all controllers
+    #     for axis in [x_axis, y_axis, z_axis]:
+    #         axis.stop()
+    #     print("Controllers cleaned up.")
 
 if __name__ == "__main__":
-    setup_gpio()
-    main()
-    GPIO.cleanup()
-
+    if setup_gpio():
+        main()
+    else:
+        GPIO.cleanup()
+        print("Failed to initialize GPIO")
 
 
 
