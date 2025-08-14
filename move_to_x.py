@@ -3,7 +3,7 @@ from Xeryon import *
 from matplotlib import pyplot as plt
 
 # 1. Setup
-controller = Xeryon("COM4", 115200)           # Setup serial communication
+controller = Xeryon("COM7", 115200)           # Setup serial communication
 axisX = controller.addAxis(Stage.XLA_1250_10N, "X") # Add axis with specified stage
 
 # Error conditions to check
@@ -67,7 +67,7 @@ def move_to_x(x_mm):
     # Start logging
     axisX.startLogging()
     axisX.setUnits(Units.mm)
-    axisX.setSpeed
+    axisX.setSpeed(5)
     # Perform the move
     axisX.setDPOS(x_mm)
     
@@ -80,14 +80,14 @@ def move_to_x(x_mm):
 
     print(f"✅ Reached position {x_mm} mm with EPOS: {axisX.getEPOS()} mm")
 
-    # Plot the logged data non-blocking
-    unit_converted_epos = [axisX.convertEncoderUnitsToUnits(epos, axisX.units) for epos in logs["EPOS"]]
-    plt.figure()
-    plt.plot(unit_converted_epos)
-    plt.ylabel('EPOS ('+str(axisX.units)+')')
-    plt.xlabel("Sample")
-    plt.title(f"Movement to {x_mm} mm")
-    plt.show(block=False)
+    # # Plot the logged data non-blocking
+    # unit_converted_epos = [axisX.convertEncoderUnitsToUnits(epos, axisX.units) for epos in logs["EPOS"]]
+    # plt.figure()
+    # plt.plot(unit_converted_epos)
+    # plt.ylabel('EPOS ('+str(axisX.units)+')')
+    # plt.xlabel("Sample")
+    # plt.title(f"Movement to {x_mm} mm")
+    # plt.show(block=False)
 
     # Check and print errors in red
     errors = [message for message, check in error_checks if check()]
@@ -101,8 +101,8 @@ def move_to_x(x_mm):
     print("=========================================")
 
 # Test movements
-move_to_x(5)
-move_to_x(20)
+# move_to_x(5)
+# move_to_x(20)
 move_to_x(50)
 move_to_x(0)
 move_to_x(-50)
