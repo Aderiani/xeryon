@@ -352,14 +352,39 @@ class Axis:
         This function finds the index, after finding the index it goes to the index position.
         It blocks the program until the index is found.
         """
+        self.__sendCommand("ENON=?")
+        self.__sendCommand("ENBL=?")
+        self.__sendCommand("ENCR=?")
+
+        # wait briefly (or poll) for settings replies to arrive
+        t0 = time.time()
+        while (self.getSetting("ENON") is None or
+            self.getSetting("ENBL") is None or
+            self.getSetting("ENCR") is None) and time.time() - t0 < 0.5:
+            time.sleep(0.01)
+
+        print("Before sending INDX = 0")
+        print(self.getSetting("ENON"))
+        print(self.getSetting("ENBL"))
+        print(self.getSetting("ENCR"))
+
         self.__sendCommand("INDX=" + str(direction))
         self.was_valid_DPOS = False
-
         if DISABLE_WAITING is False or forceWaiting is True:
             self.__waitForUpdate()  # Waits a couple of updates, so the EncoderValid flag is valid and doesn't lagg behind.
             self.__waitForUpdate()
             outputConsole("Searching index for axis " + str(self) + ".")
+            print("After sending INDX = 0")
+            print(self.getSetting("ENON"))
+            print(self.getSetting("ENBL"))
+            print(self.getSetting("ENCR"))
+            if self.isAtLeftEnd():
+                outputConsole("Lelft End reached ---.")
+            if self.isAtRightEnd():
+                outputConsole("Right End reached ---.")   
+
             while not self.isEncoderValid():  # While index not found, wait.
+                    
                 if not self.isSearchingIndex():  # Check if searching for index bit is true.
                     outputConsole("Index is not found, but stopped searching for index.", True)
                     return False
@@ -763,12 +788,14 @@ class Axis:
         """
         :return: True if the "Encoder Valid" flag is set to true.
         """
+        # print("isencodervalid" , self.__getStatBitAtIndex(8, external_stat) == "1")
         return self.__getStatBitAtIndex(8, external_stat) == "1"
 
     def isSearchingIndex(self, external_stat = None):
         """
         :return: True if the "Searching index" flag is set to true.
         """
+        # print("isSearchingIndex",self.__getStatBitAtIndex(9, external_stat) == "1")
         return self.__getStatBitAtIndex(9, external_stat) == "1"
 
     def isPositionReached(self, external_stat = None):
@@ -793,12 +820,14 @@ class Axis:
         """
         :return: True if the "Left end stop" flag is set to true.
         """
+        # print("isAtLeftEnd",self.__getStatBitAtIndex(14, external_stat) == "1") #getting this value as false
         return self.__getStatBitAtIndex(14, external_stat) == "1"
 
     def isAtRightEnd(self, external_stat = None):
         """
         :return: True if the "Right end stop" flag is set to true.
         """
+        # print("isAtRightEnd",self.__getStatBitAtIndex(15, external_stat) == "1")  #getting this value as false
         return self.__getStatBitAtIndex(15, external_stat) == "1"
 
     def isErrorLimit(self, external_stat = None):
@@ -1126,6 +1155,8 @@ class Axis:
 
         # Construct and send the command.
         command = tag + "=" + str(value)
+        #print(command)
+        #print(prefix)
         self.xeryon_object.getCommunication().sendCommand(prefix + command)
 
     def __waitForUpdate(self):
