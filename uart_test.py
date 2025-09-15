@@ -42,26 +42,33 @@ def wait_pos(ser, target, pto2=400, timeout=12.0):
         time.sleep(0.05)
     return False
 
+
 ser = serial.Serial('COM6', 9600, timeout=0.5)
 time.sleep(0.3)
+
+ser.reset_input_buffer(); ser.reset_output_buffer()
 
 # 0) Clean slate, closed-loop stage
 ser.write(b'RSET=0\n'); time.sleep(0.3)
 ser.write(b'XLA1=1250\n'); time.sleep(0.1)
-ser.write(b'LOAD=0\n');   time.sleep(0.2)
+# ser.write(b'LOAD=0\n');   time.sleep(0.2)
 
 # 1) Encoder sane + wide limits
-ser.write(b'ENCD=1\n')         # ensure encoder is enabled / correct mode for closed loop
+ser.write(b'ENCD=0\n')         # encoder direction
 ser.write(b'ENCO=0\n')         # clear encoder offset for now
 ser.write(b'LLIM=-200000\n')   # very wide (≈ -250 mm at 1.25 µm/count)
 ser.write(b'HLIM=200000\n')    # very wide (≈ +250 mm)
 ser.write(b'PTO2=400\n'); ser.write(b'PTOL=400\n')   # loose tolerance for homing
+#The zones are defined symmetrically around the target position, with zone 1 being the area closest to the target and zone 2 the widest.
+# ser.write(b'ZON1=0.01\n'); ser.write(b'ZON2=1\n')    
 time.sleep(0.1)
 
 # 2) Enable force (clear bit4), pick freqs
 ser.write(b'ENBL=1\n');   time.sleep(0.1)   # clears ForceZero (bit4) for motion
 ser.write(b'FREQ=87000\n'); time.sleep(0.05)
 ser.write(b'FRQ2=86000\n'); time.sleep(0.05)
+
+ser.write(b'SAVE\n'); time.sleep(0.05)  # Save above settings to memory
 
 # 3) If an end-stop bit is stuck, choose index direction away from it
 s0 = stat(ser)
@@ -72,10 +79,30 @@ if at_left and not at_right:  indx_dir = +1
 elif at_right and not at_left: indx_dir = -1
 else: indx_dir = 0  # unknown/both → let drive decide
 
+ser.write(b'SSPD=2000\n'); time.sleep(0.05)   # 2 mm/s
+if at_left:
+    # print("At left\n")    
+    ser.write(b'SCAN=1\n')  
+    time.sleep(5.0)
+    ser.write(b'SCAN=0\n')
+    time.sleep(0.2)
+    print("Scanning-----")
+
+if at_right:
+    # print("At Right\n")    
+    ser.write(b'SCAN=-1\n') 
+    time.sleep(5.0)
+    ser.write(b'SCAN=0\n')
+    time.sleep(0.2)
+    print("Scanning-----")
+
 ser.write(b'STAT=?\n') 
 time.sleep(0.5) 
 status = ser.read(200) 
 print(f"Status before index: {status}")
+
+ser.write(b'ENBL=1\n')
+time.sleep(0.1)  #just before index
 
 # 4) Index
 ser.write(f'INDX={indx_dir}\n'.encode())
@@ -103,6 +130,24 @@ if not wait_pos(ser, 0, pto2=400, timeout=12.0):
         raise RuntimeError("Failed to reach home (0 counts)")
 
 print(f"Reached to home postion\n")
+
+ser.write(b'STAT=?\n') 
+time.sleep(0.5) 
+status = ser.read(200) 
+print(f"Status after home position: {status}")
+
+ser.write(b'EPOS=?\n') 
+time.sleep(0.5) 
+status = ser.read(200) 
+print(f"EPOS after home position: {status}")
+
+ser.write(b'LLIM=?\n')
+time.sleep(0.5) 
+print(f"LLIM status: {ser.read(200)}")
+ser.write(b'HLIM=?\n')
+time.sleep(0.5) 
+print(f"HLIM status: {ser.read(200)}")
+
 # 6) Scan from home (closed-loop jog)
 ser.write(b'SSPD=2000\n'); time.sleep(0.05)   # 2 mm/s
 ser.write(b'SCAN=1\n');   time.sleep(5.0)
