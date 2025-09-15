@@ -1,87 +1,109 @@
-import serial
-# print(serial.__file__)
-import time
+import re, time, serial
 import serial.tools.list_ports
 
-ser = serial.Serial('COM6', 9600, timeout=2)
-time.sleep(1)
+def get_int(ser, tag, tries=10):
+    for _ in range(tries):
+        ser.write(f"{tag}=?\n".encode())
+        line = ser.readline().decode(errors="ignore").strip()
+        m = re.search(rf"{tag}=(-?\d+)", line)
+        if m: return int(m.group(1))
+        time.sleep(0.05)
+    raise RuntimeError(f"No reply for {tag}=?")
 
-# Full reset sequence
-ser.write(b'RSET\n')
-time.sleep(2)
+def stat(ser): return get_int(ser, "STAT")
+def epos(ser): return get_int(ser, "EPOS")
 
-# Configure stage type
-ser.write(b'XLA3=1250\n')
-time.sleep(1)
+def wait_indexed(ser, timeout=20.0):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        s = stat(ser)
+        enc_valid = bool(s & (1<<8))   # EncoderValid
+        searching = bool(s & (1<<9))   # SearchingIndex
+        scanning  = bool(s & (1<<13))  # Scanning
+        if enc_valid: return True
+        if not searching and scanning:  # still moving → let it settle
+            time.sleep(0.2); continue
+        if not searching and not scanning and not enc_valid:
+            return False
+        time.sleep(0.05)
+    return False
 
-# Load settings
-ser.write(b'LOAD\n')
-time.sleep(0.5)
+def wait_pos(ser, target, pto2=400, timeout=12.0):
+    t0 = time.time(); ok_streak = 0
+    while time.time() - t0 < timeout:
+        s = stat(ser)
+        at_target = abs(epos(ser) - target) <= pto2
+        reached = bool(s & (1<<10))   # PositionReached
+        if at_target or reached:
+            ok_streak += 1
+            if ok_streak >= 4: return True
+        else:
+            ok_streak = 0
+        time.sleep(0.05)
+    return False
 
-# Set motor parameters
-ser.write(b'VOLT=48000\n')  # 48V VOLT is open loop specific command
-ser.write(b'FREQ=87000\n')  # FREQ is closed loop specific command
-ser.write(b'AMPL=45\n')     # AMPL is open loop specific command
-ser.write(b'ENBL=1\n')      # ENBL is open/closed loop specific command
-ser.write(b'INFO=0\n')      # stop broadcasting
-time.sleep(0.5)
+ser = serial.Serial('COM6', 9600, timeout=0.5)
+time.sleep(0.3)
 
-ser.write(b'SAVE\n')  # Save above settings to memory
+# 0) Clean slate, closed-loop stage
+ser.write(b'RSET=0\n'); time.sleep(0.3)
+ser.write(b'XLA1=1250\n'); time.sleep(0.1)
+ser.write(b'LOAD=0\n');   time.sleep(0.2)
 
-#check the settings
-ser.write(b'ENBL=?\n')
-time.sleep(0.5) 
-print(f"Enbale status: {ser.read(200)}")
-ser.write(b'FREQ=?\n')
-time.sleep(0.5) 
-print(f"Freq check: {ser.read(200)}")
-ser.write(b'SOFT=?\n')      #request software number
-time.sleep(0.5)
-print(f"Software number: {ser.read(200)}")
-ser.write(b'SRNO=?\n')      #request serial number
-time.sleep(0.5)
-print(f"Serial number: {ser.read(200)}")
-ser.write(b'ENON=?\n')      #check for open or closed loop ,ENON is closed loop command. so not receiving valid response
-time.sleep(0.5)
-print(f"Opeloop or Closed loop: {ser.read(200)}")
-ser.write(b'STAT=?\n')      #Check the status bits
-time.sleep(0.5)
-print(f"Status of STAT: {ser.read(200)}")
-
-
-# # Find index first (required for closed-loop)
-# print("Finding index...")
-# ser.write(b'INDX=0\n')
-# time.sleep(5)
-
-# set a reasonable jog speed: 5 mm/s = 5000 µm/s
-ser.write(b'SSPD=2000\n')        # speed for scanning/jogging in open loop
+# 1) Encoder sane + wide limits
+ser.write(b'ENCD=1\n')         # ensure encoder is enabled / correct mode for closed loop
+ser.write(b'ENCO=0\n')         # clear encoder offset for now
+ser.write(b'LLIM=-200000\n')   # very wide (≈ -250 mm at 1.25 µm/count)
+ser.write(b'HLIM=200000\n')    # very wide (≈ +250 mm)
+ser.write(b'PTO2=400\n'); ser.write(b'PTOL=400\n')   # loose tolerance for homing
 time.sleep(0.1)
 
-#start moving
-print("Start Moving*********\n")
-ser.write(b'SCAN=1\n')     
-time.sleep(5.0)
-ser.write(b'SCAN=0\n') 
-time.sleep(1.0)
-ser.write(b'SCAN=-1\n')     
-time.sleep(5.0)
-ser.write(b'SCAN=0\n') 
+# 2) Enable force (clear bit4), pick freqs
+ser.write(b'ENBL=1\n');   time.sleep(0.1)   # clears ForceZero (bit4) for motion
+ser.write(b'FREQ=87000\n'); time.sleep(0.05)
+ser.write(b'FRQ2=86000\n'); time.sleep(0.05)
 
+# 3) If an end-stop bit is stuck, choose index direction away from it
+s0 = stat(ser)
+at_left  = bool(s0 & (1<<14))
+at_right = bool(s0 & (1<<15))
+indx_dir = 0
+if at_left and not at_right:  indx_dir = +1
+elif at_right and not at_left: indx_dir = -1
+else: indx_dir = 0  # unknown/both → let drive decide
 
-# # Check if encoder is valid
-# ser.write(b'STAT=?\n')
-# time.sleep(0.5)
-# status = ser.read(200)
-# print(f"Status after index: {status}")
+ser.write(b'STAT=?\n') 
+time.sleep(0.5) 
+status = ser.read(200) 
+print(f"Status before index: {status}")
 
-# # Try movement
-# print("Moving...")
-# ser.write(b'DPOS=5000\n')
-# time.sleep(3)
+# 4) Index
+ser.write(f'INDX={indx_dir}\n'.encode())
+if not wait_indexed(ser, timeout=20.0):
+    # try opposite once if the first pass didn't catch index
+    ser.write(b'INDX=1\n' if indx_dir<=0 else b'INDX=-1\n')
+    if not wait_indexed(ser, timeout=20.0):
+        raise RuntimeError("Index search stopped without EncoderValid")
 
-# ser.write(b'EPOS=?\n')
-# time.sleep(0.5)
-# print(f"Position: {ser.read(100)}")
+ser.write(b'STAT=?\n') 
+time.sleep(0.5) 
+status = ser.read(200) 
+print(f"Status after index: {status}")
 
-ser.close()
+# 5) Home to 0 counts
+ser.write(b'SCAN=0\n'); time.sleep(0.05)   # make sure no jog is active
+ser.write(b'ENBL=1\n'); time.sleep(0.05)   # re-clear any forced zero
+ser.write(b'DPOS=0\n')
+if not wait_pos(ser, 0, pto2=400, timeout=12.0):
+    # nudge and try once more if we were right on a soft limit edge
+    ser.write(b'SSPD=1500\n'); time.sleep(0.05)  # 1.5 mm/s
+    ser.write(b'SCAN=1\n'); time.sleep(0.3); ser.write(b'SCAN=0\n'); time.sleep(0.1)
+    ser.write(b'DPOS=0\n')
+    if not wait_pos(ser, 0, pto2=400, timeout=12.0):
+        raise RuntimeError("Failed to reach home (0 counts)")
+
+print(f"Reached to home postion\n")
+# 6) Scan from home (closed-loop jog)
+ser.write(b'SSPD=2000\n'); time.sleep(0.05)   # 2 mm/s
+ser.write(b'SCAN=1\n');   time.sleep(5.0)
+ser.write(b'SCAN=0\n')
