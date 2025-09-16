@@ -37,7 +37,11 @@ def write_tag(tag: str, value, axis: str | None = None):
 # what to read right after LOAD (tweak as you like)
 READBACK_TAGS = [
     "SOFT","SRNO","STAT","EPOS","LLIM","HLIM","FREQ","FRQ2","ENCD","ENCO",
-    "PTOL","PTO2","SSPD","MSPD","ISPD","ACCE","DECE","VOLT","AMPL","INFO","POLI"
+    "PTOL","PTO2","SSPD","MSPD","ISPD","ACCE","DECE","VOLT","AMPL","INFO","POLI",
+    "HFRQ","LFRQ","PROP","PRO2","MPRO","INTF","MASS","MMAS","ZON1","ZON2",
+    "ACCE","DECE","ILIM","ELIM","SLIM","ACTD","TOUT","TOU2","TOU3","ENBR","ENBL",
+    "INDA","DTIM","UART","PHAC","PHAS","DUCO","MIMP","MAMP","AMPL","DUTY","OFSA",
+    "OFSB","SQEZ","COMP","DLAY","DTIM","FILE","FILA","FILG","FILP","PLIM","DLAY"
 ]
 
 # settings you want to enforce AFTER LOAD (example; edit values for your setup)
@@ -105,9 +109,9 @@ old = read_many(READBACK_TAGS)
 print_kv_table(old, "Current settings (after LOAD)")
 
 # 3) Apply your desired settings (idempotent: only writes diffs)
-changes = apply_settings(DESIRED, axis_letter="X")
-print_kv_table({k: f"{a} -> {b}" for k,(a,b) in changes.items()}, "Applied changes")
+#changes = apply_settings(DESIRED, axis_letter="X")
+#print_kv_table({k: f"{a} -> {b}" for k,(a,b) in changes.items()}, "Applied changes")
 
 # 4) Verify
-new = read_many(READBACK_TAGS)
-print_kv_table(new, "Settings after apply")
+#new = read_many(READBACK_TAGS)
+#print_kv_table(new, "Settings after apply")
