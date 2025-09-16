@@ -374,10 +374,10 @@ class Axis:
             self.__waitForUpdate()  # Waits a couple of updates, so the EncoderValid flag is valid and doesn't lagg behind.
             self.__waitForUpdate()
             outputConsole("Searching index for axis " + str(self) + ".")
-            print("After sending INDX = 0")
-            print(self.getSetting("ENON"))
-            print(self.getSetting("ENBL"))
-            print(self.getSetting("ENCR"))
+            # print("After sending INDX = 0")
+            # print(self.getSetting("ENON"))
+            # print(self.getSetting("ENBL"))
+            # print(self.getSetting("ENCR"))
             if self.isAtLeftEnd():
                 outputConsole("Lelft End reached ---.")
             if self.isAtRightEnd():
