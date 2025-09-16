@@ -97,7 +97,7 @@ ser.reset_input_buffer(); ser.reset_output_buffer()
 
 # 0) Clean slate, closed-loop stage
 ser.write(b'RSET=0\n'); time.sleep(0.3)
-ser.write(b'XLA3=1250\n'); time.sleep(0.1)
+# ser.write(b'XLA3=1250\n'); time.sleep(0.1)
 ser.write(b'LOAD=0\n');   time.sleep(0.2)
 time.sleep(0.1)
 

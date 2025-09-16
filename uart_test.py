@@ -61,7 +61,8 @@ def wait_pos(ser, target, pto2=400, timeout=12.0):
         s = stat(ser)
         at_target = abs(epos(ser) - target) <= pto2
         reached = bool(s & (1<<10))   # PositionReached
-        if at_target or reached:
+        # if at_target or reached:
+        if at_target and reached:    
             ok_streak += 1
             if ok_streak >= 4: return True
         else:
@@ -126,8 +127,7 @@ if at_right:
 
 print("Pre-index STAT:", stat(ser), bits(stat(ser)))
 
-ser.write(b'ENBL=1\n')
-time.sleep(0.1)  #just before index
+ser.write(b'ENBL=1\n') ; time.sleep(0.12)  #just before index
 
 print("Finding the index\n")
 ser.write(f'INDX={indx_dir}\n'.encode())
@@ -153,12 +153,13 @@ print("Post-index STAT:", stat(ser), bits(stat(ser)))
 ser.write(b'SCAN=0\n'); time.sleep(0.05)   # make sure no jog is active
 ser.write(b'ENBL=1\n'); time.sleep(0.05)   # re-clear any forced zero
 ser.write(b'DPOS=0\n')
-if not wait_pos(ser, 0, pto2=400, timeout=12.0):
+pto2_now = get_int(ser, "PTO2")
+if not wait_pos(ser, 0, pto2=pto2_now, timeout=12.0):
     # nudge and try once more if we were right on a soft limit edge
     ser.write(b'SSPD=1500\n'); time.sleep(0.05)  # 1.5 mm/s
     ser.write(b'SCAN=1\n'); time.sleep(0.3); ser.write(b'SCAN=0\n'); time.sleep(0.1)
     ser.write(b'DPOS=0\n')
-    if not wait_pos(ser, 0, pto2=400, timeout=12.0):
+    if not wait_pos(ser, 0, pto2=pto2_now, timeout=12.0):
         raise RuntimeError("Failed to reach home (0 counts)")
 
 print(f"Reached to home postion\n")
@@ -183,23 +184,29 @@ print("Moving...")
 ser.write(b'DPOS=15500\n') #1 count = 0.00125 mm . Multiply and get the EPOS and DPOS In MM
 time.sleep(3)
 ser.write(b'WAIT=100\n')
-ser.write(b'EPOS=?\n')
-time.sleep(0.5)
-print(f"Position: {ser.read(100)}")
+if  wait_pos(ser, 15500, pto2=pto2_now, timeout=12.0):
+    # print("position reached")
+    ser.write(b'EPOS=?\n')
+    time.sleep(0.5)
+    print("DPOS=15500")
+    print(f"Position: {ser.read(100)}")
 
 ser.write(b'DPOS=0\n') #1 count = 0.00125 mm . Multiply and get the EPOS and DPOS In MM
 time.sleep(3)
 ser.write(b'WAIT=100\n')
+if  wait_pos(ser, 0, pto2=pto2_now, timeout=12.0):
+    # print("position reached")
+    ser.write(b'EPOS=?\n')
+    time.sleep(0.5)
+    print("DPOS = 0")
+    print(f"Position: {ser.read(100)}")
 
-ser.write(b'EPOS=?\n')
-time.sleep(0.5)
-ser.write(b'WAIT=100\n')
-print(f"Position: {ser.read(100)}")
-
-ser.write(b'DPOS= -15500\n') #1 count = 0.00125 mm . Multiply and get the EPOS and DPOS In MM
+ser.write(b'DPOS=-25500\n') #1 count = 0.00125 mm . Multiply and get the EPOS and DPOS In MM
 time.sleep(3.0)
 ser.write(b'WAIT=100\n')
-
-ser.write(b'EPOS=?\n')
-time.sleep(0.5)
-print(f"Position: {ser.read(100)}")
+if  wait_pos(ser, -25500, pto2=pto2_now, timeout=15.0):
+    # print("position reached")
+    ser.write(b'EPOS=?\n')
+    time.sleep(0.5)
+    print("DPOS=-25500")
+    print(f"Position: {ser.read(100)}")
