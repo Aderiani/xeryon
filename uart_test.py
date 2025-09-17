@@ -85,6 +85,8 @@ ser.write(b'INFO=0\n');   time.sleep(0.2) #stop broadcasting
 # time.sleep(0.3)
 # print("Settings applied\n")
 
+#****************Code to find the encoder resolution*********
+
 def read_tag(ser, tag, window=0.8):
     t0 = time.time()
     while time.time() - t0 < window:
@@ -132,6 +134,7 @@ family = {1250.0:"XLA_1250 / XLS_1250", 312.5:"XLA_312 / XLS_312",
           78.125:"XLA_78 / XLS_78", 5.0:"XLS_5", 1.0:"XLS_1"}[nearest]
 print("Likely stage family:", family)
 
+#****************END of Code to find the encoder resolution*********
 
 print("Scanning ---------------")
 
