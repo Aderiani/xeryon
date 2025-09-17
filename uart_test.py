@@ -1,8 +1,15 @@
 import re, time, serial ,math
 import serial.tools.list_ports
-# from readsetting import read_many
-# from readsetting import print_kv_table
-# from readsetting import READBACK_TAGS
+
+RES_MM_PER_COUNT = 0.00125  # 1250 nm/count encoder resolution
+
+def counts_to_mm(counts):
+    return counts * RES_MM_PER_COUNT
+#usage
+#print(f"EPOS is : {counts_to_mm(5500):.6f} mm")
+
+def mm_to_counts(mm):
+    return int(round(mm / RES_MM_PER_COUNT))
 
 def writesetting():
     ser.write(b'ENCD=0\n'); time.sleep(0.05)         # encoder direction
@@ -85,57 +92,6 @@ ser.write(b'INFO=0\n');   time.sleep(0.2) #stop broadcasting
 # time.sleep(0.3)
 # print("Settings applied\n")
 
-#****************Code to find the encoder resolution*********
-
-def read_tag(ser, tag, window=0.8):
-    t0 = time.time()
-    while time.time() - t0 < window:
-        line = ser.readline().strip()
-        if line.startswith(tag + b"="):
-            try:
-                return int(line.split(b"=")[1])
-            except: 
-                return line.split(b"=")[1]
-    return None
-
-# 1) Pick a known speed (µm/s) and set it
-SSPD_um_s = 5000     # 5 mm/s – adjust lower if travel is short/sensitive
-ser.write(f"SSPD={int(SSPD_um_s)}\n".encode())
-
-# 2) Get baseline EPOS (encoder counts)
-ser.write(b"EPOS=?\n"); e0 = read_tag(ser, b"EPOS")
-if e0 is None: 
-    raise RuntimeError("No EPOS reply; check ECHO and connection.")
-
-# 3) Scan for a short, safe time
-scan_time = 0.6
-ser.write(b"SCAN=1\n"); time.sleep(scan_time); ser.write(b"SCAN=0\n")
-
-# 4) Read new EPOS and compute Δcounts
-time.sleep(0.1)
-ser.write(b"EPOS=?\n"); e1 = read_tag(ser, b"EPOS")
-if e1 is None: 
-    raise RuntimeError("No EPOS after scan.")
-delta_counts = abs(int(e1) - int(e0))
-if delta_counts == 0:
-    raise RuntimeError("No encoder motion detected; lower speed/time or check setup.")
-
-# 5) Estimate encoder resolution (nm/count)
-res_nm = (SSPD_um_s * scan_time * 1000.0) / delta_counts
-
-# 6) Snap to nearest known resolution
-known = [1250.0, 312.5, 78.125, 5.0, 1.0]
-nearest = min(known, key=lambda k: abs(k - res_nm))
-
-print(f"Estimated resolution: {res_nm:.3f} nm/count → nearest {nearest} nm/count")
-
-# Map to family
-family = {1250.0:"XLA_1250 / XLS_1250", 312.5:"XLA_312 / XLS_312",
-          78.125:"XLA_78 / XLS_78", 5.0:"XLS_5", 1.0:"XLS_1"}[nearest]
-print("Likely stage family:", family)
-
-#****************END of Code to find the encoder resolution*********
-
 print("Scanning ---------------")
 
 ser.write(b'SCAN=-1\n');time.sleep(5.0)
@@ -203,7 +159,7 @@ ser.write(b'DPOS=0\n')
 pto2_now = get_int(ser, "PTO2")
 if not wait_pos(ser, 0, pto2=pto2_now, timeout=12.0):
     # nudge and try once more if we were right on a soft limit edge
-    ser.write(b'SSPD=1500\n'); time.sleep(0.05)  # 1.5 mm/s
+    ser.write(b'SSPD=20000\n'); time.sleep(0.05)  # 1.5 mm/s
     ser.write(b'SCAN=1\n'); time.sleep(0.3); ser.write(b'SCAN=0\n'); time.sleep(0.1)
     ser.write(b'DPOS=0\n')
     if not wait_pos(ser, 0, pto2=pto2_now, timeout=12.0):
@@ -227,7 +183,80 @@ ser.write(b'SCAN=1\n');   time.sleep(5.0)
 ser.write(b'SCAN=0\n')
 
  # Try movement
-print("Moving...")
+print("Moving............")
+
+def _read_tag_int(ser, tag: bytes, prefix: bytes = b"", window=1.0):
+    """Read a TAG=number line within 'window' seconds. Returns int or None."""
+    t0 = time.time()
+    while time.time() - t0 < window:
+        line = ser.readline()
+        if not line:
+            continue
+        s = line.strip()
+        # Accept both single-axis ("TAG=...") and multi-axis ("X:TAG=...")
+        if prefix and s.startswith(prefix):
+            s = s[len(prefix):]
+        if s.startswith(tag + b"="):
+            try:
+                return int(s.split(b"=", 1)[1])
+            except ValueError:
+                return None
+    return None
+
+def move_counts_and_report_mm(ser, target_counts, *, pto2, timeout, axis=None, send_wait_ms=100, use_wait_pos=True):
+    """
+    Moves to 'target_counts', waits, then prints DPOS/EPOS in counts and mm.
+    Requires your existing wait_pos(ser, target_counts, pto2, timeout).
+    """
+    prefix = (axis.encode() + b":") if axis else b""
+    def send(cmd_bytes):
+        ser.write(prefix + cmd_bytes + b"\n")
+
+    # Make sure replies come back line-based
+    send(b"ECHO=1")
+    ser.reset_input_buffer()
+
+    # 1) Command the move
+    send(f"DPOS={int(target_counts)}".encode())
+    if send_wait_ms:
+        send(f"WAIT={int(send_wait_ms)}".encode())
+
+    ok = True
+    if use_wait_pos:
+        ok = wait_pos(ser, target_counts, pto2=pto2, timeout=timeout)
+
+    # 2) Query EPOS and print
+    send(b"EPOS=?")
+    epos_counts = _read_tag_int(ser, b"EPOS", prefix=prefix, window=1.0)
+
+    dpos_mm = counts_to_mm(target_counts)
+    if epos_counts is None:
+        print(f"DPOS: {target_counts} cnt  ({dpos_mm:.6f} mm)")
+        print("EPOS: <no reply>")
+    else:
+        epos_mm = counts_to_mm(epos_counts)
+        print(f"DPOS: {target_counts} cnt  ({dpos_mm:.6f} mm)")
+        print(f"EPOS: {epos_counts} cnt  ({epos_mm:.6f} mm)")
+        print(f"✅ Reached position {dpos_mm:.6f} mm with EPOS: {   epos_mm:.6f} mm")
+    return {
+        "ok": ok,
+        "dpos_counts": target_counts, "dpos_mm": dpos_mm,
+        "epos_counts": epos_counts, "epos_mm": (counts_to_mm(epos_counts) if epos_counts is not None else None),
+    }
+
+def move_mm_and_report(ser, target_mm, *, pto2, timeout, axis=None, **kw):
+    """Same as above but you specify the target in mm."""
+    counts = mm_to_counts(target_mm)
+    return move_counts_and_report_mm(ser, counts, pto2=pto2, timeout=timeout, axis=axis, **kw)
+
+#Usage
+# move_counts_and_report_mm(ser,  15500, pto2=pto2_now, timeout=12.0)   # ~19.375 mm
+# move_counts_and_report_mm(ser,      0, pto2=pto2_now, timeout=12.0)   # 0 mm
+# move_mm_and_report(ser, 25,pto2=pto2_now, timeout=12.0)               
+# move_mm_and_report(ser, -25,pto2=pto2_now, timeout=12.0)
+move_mm_and_report(ser, -85,pto2=pto2_now, timeout=12.0) 
+print("STAT:", stat(ser), bits(stat(ser))) 
+'''
 ser.write(b'DPOS=15500\n') #1 count = 0.00125 mm . Multiply and get the EPOS and DPOS In MM
 time.sleep(3)
 ser.write(b'WAIT=100\n')
@@ -257,3 +286,4 @@ if  wait_pos(ser, -25500, pto2=pto2_now, timeout=15.0):
     time.sleep(0.5)
     print("DPOS=-25500")
     print(f"Position: {ser.read(100)}")
+    '''
