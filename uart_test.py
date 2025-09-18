@@ -77,6 +77,24 @@ def wait_pos(ser, target, pto2=400, timeout=12.0):
         time.sleep(0.05)
     return False
 
+def _read_tag_int(ser, tag: bytes, prefix: bytes = b"", window=1.0):
+    """Read a TAG=number line within 'window' seconds. Returns int or None."""
+    t0 = time.time()
+    while time.time() - t0 < window:
+        line = ser.readline()
+        if not line:
+            continue
+        s = line.strip()
+        # Accept both single-axis ("TAG=...") and multi-axis ("X:TAG=...")
+        if prefix and s.startswith(prefix):
+            s = s[len(prefix):]
+        if s.startswith(tag + b"="):
+            try:
+                return int(s.split(b"=", 1)[1])
+            except ValueError:
+                return None
+    return None
+
 
 ser = serial.Serial('COM6', 9600, timeout=0.5)
 time.sleep(0.3)
@@ -91,6 +109,18 @@ ser.write(b'INFO=0\n');   time.sleep(0.2) #stop broadcasting
 # writesetting()
 # time.sleep(0.3)
 # print("Settings applied\n")
+
+#Get the limits values 
+ser.write(b'LLIM=?\n');time.sleep(0.2) 
+llim = _read_tag_int(ser, b"LLIM")
+print(f"LLIM status: {llim * RES_MM_PER_COUNT } mm")
+ser.write(b'HLIM=?\n');time.sleep(0.2) 
+hlim = _read_tag_int(ser, b"HLIM")
+print(f"HLIM status: {hlim * RES_MM_PER_COUNT } mm")
+#get the ENCO value -: distance between the index position and the desired zero position,in encoder units. 
+ser.write(b'ENCO=?\n');time.sleep(0.2) 
+enco = _read_tag_int(ser, b"ENCO")
+print(f"ENCO status: {enco} counts {enco * RES_MM_PER_COUNT } mm")
 
 print("Scanning ---------------")
 
@@ -185,23 +215,7 @@ ser.write(b'SCAN=0\n')
  # Try movement
 print("Moving............")
 
-def _read_tag_int(ser, tag: bytes, prefix: bytes = b"", window=1.0):
-    """Read a TAG=number line within 'window' seconds. Returns int or None."""
-    t0 = time.time()
-    while time.time() - t0 < window:
-        line = ser.readline()
-        if not line:
-            continue
-        s = line.strip()
-        # Accept both single-axis ("TAG=...") and multi-axis ("X:TAG=...")
-        if prefix and s.startswith(prefix):
-            s = s[len(prefix):]
-        if s.startswith(tag + b"="):
-            try:
-                return int(s.split(b"=", 1)[1])
-            except ValueError:
-                return None
-    return None
+
 
 def move_counts_and_report_mm(ser, target_counts, *, pto2, timeout, axis=None, send_wait_ms=100, use_wait_pos=True):
     """
@@ -234,10 +248,13 @@ def move_counts_and_report_mm(ser, target_counts, *, pto2, timeout, axis=None, s
         print(f"DPOS: {target_counts} cnt  ({dpos_mm:.6f} mm)")
         print("EPOS: <no reply>")
     else:
-        epos_mm = counts_to_mm(epos_counts)
-        print(f"DPOS: {target_counts} cnt  ({dpos_mm:.6f} mm)")
-        print(f"EPOS: {epos_counts} cnt  ({epos_mm:.6f} mm)")
-        print(f"✅ Reached position {dpos_mm:.6f} mm with EPOS: {   epos_mm:.6f} mm")
+        if(target_counts > hlim) or (target_counts < llim):
+            print(f"⚠️ Target position is not given within the limits")
+        else:
+            epos_mm = counts_to_mm(epos_counts)
+            print(f"DPOS: {target_counts} cnt  ({dpos_mm:.6f} mm)")
+            print(f"EPOS: {epos_counts} cnt  ({epos_mm:.6f} mm)")
+            print(f"✅ Reached position {dpos_mm:.6f} mm with EPOS: {   epos_mm:.6f} mm")
     return {
         "ok": ok,
         "dpos_counts": target_counts, "dpos_mm": dpos_mm,
@@ -250,12 +267,35 @@ def move_mm_and_report(ser, target_mm, *, pto2, timeout, axis=None, **kw):
     return move_counts_and_report_mm(ser, counts, pto2=pto2, timeout=timeout, axis=axis, **kw)
 
 #Usage
-# move_counts_and_report_mm(ser,  15500, pto2=pto2_now, timeout=12.0)   # ~19.375 mm
-# move_counts_and_report_mm(ser,      0, pto2=pto2_now, timeout=12.0)   # 0 mm
+move_counts_and_report_mm(ser,  15500, pto2=pto2_now, timeout=12.0)   # ~19.375 mm
+move_counts_and_report_mm(ser,      0, pto2=pto2_now, timeout=12.0)   # 0 mm
 # move_mm_and_report(ser, 25,pto2=pto2_now, timeout=12.0)               
 # move_mm_and_report(ser, -25,pto2=pto2_now, timeout=12.0)
-move_mm_and_report(ser, -85,pto2=pto2_now, timeout=12.0) 
+move_mm_and_report(ser, - 95,pto2=pto2_now, timeout=12.0) 
+
+
+#to Check if the bit 14th goes high once we reach at the left end during scan
+def poll_stat_bits(ser, window=1.0):
+    import time
+    t0 = time.time()
+    while time.time() - t0 < window:
+        ser.write(b'STAT=?\n')
+        line = ser.readline().strip()
+        if line.startswith(b'STAT='):
+            val = int(line.split(b'=')[1])
+            left_end = bool(val & (1 << 14))
+            right_end = bool(val & (1 << 15))
+            # print(f"STAT={val}  LeftEnd={left_end}  RightEnd={right_end}")
+        time.sleep(0.05)
+
+# push into limit for a moment, then stop and poll
+ser.write(b'SSPD=20000\n')   # modest speed
+ser.write(b'SCAN=-1\n')
+time.sleep(0.6)             # short push toward the left
+ser.write(b'SCAN=0\n')
+poll_stat_bits(ser, window=0.6)
 print("STAT:", stat(ser), bits(stat(ser))) 
+
 '''
 ser.write(b'DPOS=15500\n') #1 count = 0.00125 mm . Multiply and get the EPOS and DPOS In MM
 time.sleep(3)
