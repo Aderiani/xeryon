@@ -14,8 +14,8 @@ def mm_to_counts(mm):
 def writesetting():
     ser.write(b'ENCD=0\n'); time.sleep(0.05)         # encoder direction
     ser.write(b'ENCO=-706\n'); time.sleep(0.05)         # clear encoder offset for now
-    ser.write(b'LLIM=-75\n'); time.sleep(0.05)   # very wide (≈ -250 mm at 1.25 µm/count)
-    ser.write(b'HLIM=75\n') ; time.sleep(0.05)   # very wide (≈ +250 mm)
+    ser.write(b'LLIM=-60000\n'); time.sleep(0.05)   # very wide (≈ -250 mm at 1.25 µm/count)
+    ser.write(b'HLIM=60000\n') ; time.sleep(0.05)   # very wide (≈ +250 mm)
     ser.write(b'PTO2=4\n'); ser.write(b'PTOL=2\n')   # loose tolerance for homing
     ser.write(b'TOUT=1000\n'); ser.write(b'TOU2=60\n') #safety timeouts
     #The zones are defined symmetrically around the target position, with zone 1 being the area closest to the target and zone 2 the widest.
@@ -24,7 +24,8 @@ def writesetting():
     ser.write(b'FREQ=87000\n'); time.sleep(0.05)
     ser.write(b'FRQ2=86000\n'); time.sleep(0.05)
     ser.write(b'HFRQ=88000\n'); ser.write(b'LFRQ=82500\n');time.sleep(0.05)
-    ser.write(b'POLI=97\n');
+    ser.write(b'POLI=100\n');
+    ser.write(b'ISPD=10000\n');
     ser.write(b'ENBL=1\n'); time.sleep(0.05)
     time.sleep(0.1)
 
@@ -105,11 +106,11 @@ ser.write(b'RSET=0\n'); time.sleep(0.3)
 # ser.write(b'XLA1=1250\n'); time.sleep(0.1)
 ser.write(b'LOAD=0\n');   time.sleep(0.2)
 ser.write(b'INFO=0\n');   time.sleep(0.2) #stop broadcasting
-# print("Sending the setting\n")
-# writesetting()
-# time.sleep(0.3)
-# print("Settings applied\n")
-
+print("Sending the setting\n")
+writesetting()
+time.sleep(0.3)
+print("Settings applied\n")
+ser.write(b'WAIT=100\n')
 #Get the limits values 
 ser.write(b'LLIM=?\n');time.sleep(0.2) 
 llim = _read_tag_int(ser, b"LLIM")
@@ -121,6 +122,29 @@ print(f"HLIM status: {hlim * RES_MM_PER_COUNT } mm")
 ser.write(b'ENCO=?\n');time.sleep(0.2) 
 enco = _read_tag_int(ser, b"ENCO")
 print(f"ENCO status: {enco} counts {enco * RES_MM_PER_COUNT } mm")
+
+ser.write(b'ENBR=?\n');time.sleep(0.2) 
+enbr = _read_tag_int(ser, b"ENBR")
+print(f"ENBR status: {enbr}")
+
+ser.write(b'SSPD=?\n');time.sleep(0.2) 
+sspd = _read_tag_int(ser, b"SSPD")
+print(f"SSPD status: {sspd} ")
+
+ser.write(b'SSPD=5000\n'); time.sleep(0.05) 
+
+ser.write(b'SSPD=?\n');time.sleep(0.2) 
+sspd = _read_tag_int(ser, b"SSPD")
+print(f"SSPD status after setting value: {sspd} ")
+
+ser.write(b'SPCF=0\n');time.sleep(0.2) 
+ser.write(b'SPCF=?\n');time.sleep(0.2) 
+spcf = _read_tag_int(ser, b"SPCF")
+print(f"spcf status after setting value: {spcf} ")
+
+ser.write(b'ISPD=?\n');time.sleep(0.2) 
+ispd = _read_tag_int(ser, b"ISPD")
+print(f"ispd status after setting value: {ispd} ")
 
 print("Scanning ---------------")
 
@@ -140,7 +164,7 @@ if at_left and not at_right:  indx_dir = +1
 elif at_right and not at_left: indx_dir = -1
 else: indx_dir = 0  # unknown/both → let drive decide
 
-# ser.write(b'SSPD=20000\n'); time.sleep(0.05)   # 2 mm/s
+ser.write(b'SSPD=5000\n'); time.sleep(0.05)   # 2 mm/s
 if at_left:
     # print("At left\n")    
     ser.write(b'SCAN=1\n');time.sleep(5.0)
@@ -159,14 +183,20 @@ if at_right:
 # print(f"Status before index: {status}")
 
 print("Pre-index STAT:", stat(ser), bits(stat(ser)))
+print(f"INDX={indx_dir}\n")
 
 ser.write(b'ENBL=1\n') ; time.sleep(0.12)  #just before index
 
 print("Finding the index\n")
+ser.write(b'SSPD=5000\n'); time.sleep(0.05)
+ser.write(b'SSPD=?\n');time.sleep(0.2) 
+sspd = _read_tag_int(ser, b"SSPD")
+print(f"SSPD status after setting value: {sspd} ")
 ser.write(f'INDX={indx_dir}\n'.encode())
 
 if not wait_indexed(ser, timeout=20.0):
     # try opposite once if the first pass didn't catch index
+    ser.write(b'SSPD=5000\n'); time.sleep(0.05)
     ser.write(b'INDX=1\n' if indx_dir<=0 else b'INDX=-1\n')
     enc_valid = bool(s0 & (1<<8))   # EncoderValid
     print("Looking for encoder valid")
@@ -208,7 +238,7 @@ status = ser.read(200)
 print(f"EPOS after home position: {status}")
 
 # 6) Scan from home (closed-loop jog)
-ser.write(b'SSPD=20000\n'); time.sleep(0.05)   # 2 mm/s
+ser.write(b'SSPD=5000\n'); time.sleep(0.05)   # 2 mm/s
 ser.write(b'SCAN=1\n');   time.sleep(5.0)
 ser.write(b'SCAN=0\n')
 
@@ -269,8 +299,8 @@ def move_mm_and_report(ser, target_mm, *, pto2, timeout, axis=None, **kw):
 #Usage
 move_counts_and_report_mm(ser,  15500, pto2=pto2_now, timeout=12.0)   # ~19.375 mm
 move_counts_and_report_mm(ser,      0, pto2=pto2_now, timeout=12.0)   # 0 mm
-# move_mm_and_report(ser, 25,pto2=pto2_now, timeout=12.0)               
-# move_mm_and_report(ser, -25,pto2=pto2_now, timeout=12.0)
+# # move_mm_and_report(ser, 25,pto2=pto2_now, timeout=12.0)               
+# # move_mm_and_report(ser, -25,pto2=pto2_now, timeout=12.0)
 move_mm_and_report(ser, - 95,pto2=pto2_now, timeout=12.0) 
 
 
@@ -289,12 +319,12 @@ def poll_stat_bits(ser, window=1.0):
         time.sleep(0.05)
 
 # push into limit for a moment, then stop and poll
-ser.write(b'SSPD=20000\n')   # modest speed
-ser.write(b'SCAN=-1\n')
-time.sleep(0.6)             # short push toward the left
-ser.write(b'SCAN=0\n')
-poll_stat_bits(ser, window=0.6)
-print("STAT:", stat(ser), bits(stat(ser))) 
+# ser.write(b'SSPD=20000\n')   # modest speed
+# ser.write(b'SCAN=-1\n')
+# time.sleep(0.6)             # short push toward the left
+# ser.write(b'SCAN=0\n')
+# poll_stat_bits(ser, window=0.6)
+# print("STAT:", stat(ser), bits(stat(ser))) 
 
 '''
 ser.write(b'DPOS=15500\n') #1 count = 0.00125 mm . Multiply and get the EPOS and DPOS In MM

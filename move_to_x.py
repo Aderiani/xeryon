@@ -3,7 +3,7 @@ from Xeryon import *
 from matplotlib import pyplot as plt
 
 # 1. Setup
-controller = Xeryon("COM7", 115200)           # Setup serial communication
+controller = Xeryon("COM4", 115200)           # Setup serial communication
 axisX = controller.addAxis(Stage.XLA_1250_10N, "X") # Add axis with specified stage
 
 # Error conditions to check

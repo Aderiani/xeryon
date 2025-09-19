@@ -47,9 +47,13 @@ READBACK_TAGS = [
 # settings you want to enforce AFTER LOAD (example; edit values for your setup)
 DESIRED = {
     # global
-    "INFO": 0, "POLI": 97, "FREQ": 87000, "FRQ2": 86000, "ENCO": 0, "ENCD": 0,
+    "INFO": 0, "POLI": 200, "FREQ": 87000, "FRQ2": 86000, "ENCO": -706, "ENCD": 0,
     # per-axis (use axis prefix below)
-    "ENBL": 1, "LLIM": -200000, "HLIM": 200000, "PTOL": 400, "PTO2": 400, "SSPD": 2000
+    "ENBL": 1, "LLIM": -60000, "HLIM": 60000, "PTOL": 2, "PTO2": 4, "SSPD": 5000,
+    "ISPD":10000, "ACCE":65500, "DECE":65500, "VOLT" :61858, "AMPL":65520, "PROP" :120,
+    "PRO2" :40, "ZON1": 8, "ZON2" : 800, "ILIM" : 3000, "ELIM" : 0,  "SLIM" : 100000,
+    "TOUT" : 1000,  "TOU2" : 60, "ENBR" : 1,  "INDA" : 1,  "DTIM" : 0,  "DUCO" : 1,
+    "MIMP" : 29120,  "MAMP" : 65520,   "DLAY" : 10
 }
 
 # per-axis keys (will be sent as 'X:TAG=...')
@@ -109,9 +113,9 @@ old = read_many(READBACK_TAGS)
 print_kv_table(old, "Current settings (after LOAD)")
 
 # 3) Apply your desired settings (idempotent: only writes diffs)
-#changes = apply_settings(DESIRED, axis_letter="X")
-#print_kv_table({k: f"{a} -> {b}" for k,(a,b) in changes.items()}, "Applied changes")
+changes = apply_settings(DESIRED, axis_letter="X")
+print_kv_table({k: f"{a} -> {b}" for k,(a,b) in changes.items()}, "Applied changes")
 
 # 4) Verify
-#new = read_many(READBACK_TAGS)
-#print_kv_table(new, "Settings after apply")
+new = read_many(READBACK_TAGS)
+print_kv_table(new, "Settings after apply")
